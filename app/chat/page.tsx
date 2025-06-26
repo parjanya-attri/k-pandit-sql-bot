@@ -1,8 +1,8 @@
 "use client";
 import { useState, useRef, useEffect, Fragment } from "react";
-import { Card, Input, Button, Avatar, Tooltip } from "@heroui/react";
+import { Card, Input, Button, Avatar, Tooltip, Chip, Spinner } from "@heroui/react";
 import { ThemeSwitch } from "../../components/theme-switch";
-import { HiOutlinePaperClip, HiOutlineMicrophone, HiOutlineEmojiHappy, HiOutlineDotsHorizontal, HiOutlineMenu } from "react-icons/hi";
+import { HiOutlinePaperClip, HiOutlineMicrophone, HiOutlineEmojiHappy, HiOutlineDotsHorizontal, HiOutlineMenu, HiOutlinePlus, HiOutlineTrash, HiOutlineChatAlt2, HiOutlineDatabase, HiOutlineSparkles, HiOutlineLightningBolt } from "react-icons/hi";
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
@@ -21,16 +21,9 @@ interface ChatSession {
 const initialSessions: ChatSession[] = [
   {
     id: "1",
-    name: "Chat 1",
+    name: "Database Overview",
     messages: [
-      { role: "ai", content: "Welcome to Chat 1!", timestamp: Date.now() },
-    ],
-  },
-  {
-    id: "2",
-    name: "Chat 2",
-    messages: [
-      { role: "ai", content: "Welcome to Chat 2!", timestamp: Date.now() },
+      { role: "ai", content: "Welcome! I'm your SQL Intelligence Assistant. I can help you query your MSSQL database using natural language. Try asking me something like:\n\n- \"Show me all tables in the database\"\n- \"What are the recent orders?\"\n- \"Count users by region\"\n\nWhat would you like to know about your database?", timestamp: Date.now() },
     ],
   },
 ];
@@ -73,12 +66,20 @@ function getDateSeparator(prev: Message | null, curr: Message) {
   if (prevDate.toDateString() !== currDate.toDateString()) {
     return formatDate(currDate);
   }
-  // 1 hour gap
   if (curr.timestamp - prev.timestamp > 1000 * 60 * 60) {
     return formatTime(currDate);
   }
   return null;
 }
+
+const suggestedQueries = [
+  "Show me all tables in the database",
+  "What are the recent orders?",
+  "Count users by region",
+  "Find top selling products",
+  "Show customer demographics",
+  "Analyze sales trends"
+];
 
 export default function ChatPage() {
   const [chatState, setChatState] = useState<{sessions: ChatSession[], activeSessionId: string}>({ sessions: initialSessions, activeSessionId: initialSessions[0].id });
@@ -96,7 +97,6 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatState.sessions]);
 
-  // Hydrate from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
     const storedActive = localStorage.getItem(LOCAL_STORAGE_ACTIVE_KEY);
@@ -114,19 +114,19 @@ export default function ChatPage() {
     setHydrated(true);
   }, []);
 
-  // Persist sessions to localStorage on change
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(chatState.sessions));
   }, [chatState.sessions]);
 
-  // Persist activeSessionId to localStorage on change
   useEffect(() => {
     localStorage.setItem(LOCAL_STORAGE_ACTIVE_KEY, chatState.activeSessionId);
   }, [chatState.activeSessionId]);
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-    const userMsg: Message = { role: "user", content: input, timestamp: Date.now() };
+  const sendMessage = async (messageContent?: string) => {
+    const content = messageContent || input.trim();
+    if (!content) return;
+    
+    const userMsg: Message = { role: "user", content, timestamp: Date.now() };
     setChatState((prev) => ({
       ...prev,
       sessions: prev.sessions.map((s) =>
@@ -137,6 +137,7 @@ export default function ChatPage() {
     }));
     setInput("");
     setTyping(true);
+    
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -166,7 +167,7 @@ export default function ChatPage() {
         ...prev,
         sessions: prev.sessions.map((s) =>
           s.id === prev.activeSessionId
-            ? { ...s, messages: [...s.messages, { role: "ai", content: "Sorry, there was an error. Please try again.", timestamp: Date.now() }] }
+            ? { ...s, messages: [...s.messages, { role: "ai", content: "Sorry, there was an error connecting to the database. Please check your connection and try again.", timestamp: Date.now() }] }
             : s
         ),
       }));
@@ -199,21 +200,18 @@ export default function ChatPage() {
     }));
   };
 
-  // Delete a session
   const deleteSession = (id: string) => {
     if (!window.confirm("Delete this chat session?")) return;
     setChatState((prev) => {
       const filtered = prev.sessions.filter((s) => s.id !== id);
-      // If the active session is deleted, switch to the first remaining session
       if (prev.activeSessionId === id && filtered.length > 0) {
-        return { ...prev, activeSessionId: filtered[0].id };
+        return { ...prev, activeSessionId: filtered[0].id, sessions: filtered };
       } else if (filtered.length === 0) {
-        // If no sessions left, create a new one
         const newSession = {
           id: "1",
-          name: "Chat 1",
+          name: "Database Overview",
           messages: [
-            { role: "ai" as const, content: "Welcome to Chat 1!", timestamp: Date.now() },
+            { role: "ai" as const, content: "Welcome! I'm your SQL Intelligence Assistant. How can I help you explore your database today?", timestamp: Date.now() },
           ],
         };
         return { ...prev, activeSessionId: newSession.id, sessions: [newSession] };
@@ -222,55 +220,72 @@ export default function ChatPage() {
     });
   };
 
-  if (!hydrated) return null;
+  if (!hydrated) return (
+    <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-gray-950 dark:via-blue-950/20 dark:to-indigo-950/30">
+      <div className="text-center">
+        <Spinner size="lg" className="mb-4" />
+        <p className="text-gray-600 dark:text-gray-400">Loading your chat sessions...</p>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 flex flex-row bg-gradient-to-br from-blue-100/60 via-white/80 to-indigo-100/60 dark:from-gray-900 dark:via-gray-950 dark:to-blue-950 overflow-hidden">
-      {/* Sidebar (chat history) for desktop/tablet */}
-      <aside className="hidden sm:flex flex-col h-full w-72 min-w-[16rem] max-w-[20vw] bg-white/60 dark:bg-gray-900/60 border-r border-white/30 dark:border-gray-800/60 shadow-2xl z-20 overflow-y-auto">
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-white/30 dark:border-gray-800/60 bg-transparent">
-          <Avatar name="Nexa" size="md" className="shadow-lg" />
-          <span className="font-extrabold text-2xl tracking-tight text-gray-900 dark:text-white">Chats</span>
-          <div className="ml-auto flex items-center gap-2">
-            <ThemeSwitch />
+    <div className="fixed inset-0 flex flex-row bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-gray-950 dark:via-blue-950/20 dark:to-indigo-950/30 overflow-hidden">
+      {/* Sidebar */}
+      <aside className="hidden lg:flex flex-col h-full w-80 min-w-[20rem] bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-r border-white/20 dark:border-gray-800/50 shadow-2xl z-20 overflow-y-auto">
+        <div className="flex items-center gap-4 px-6 py-6 border-b border-white/20 dark:border-gray-800/50">
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full blur-md opacity-30" />
+            <Avatar 
+              name="SQL" 
+              size="md" 
+              className="relative bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg" 
+            />
           </div>
+          <div className="flex-1">
+            <h1 className="font-bold text-xl tracking-tight text-gray-900 dark:text-white">SQL Intelligence</h1>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Database Assistant</p>
+          </div>
+          <ThemeSwitch />
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin scrollbar-thumb-blue-200 dark:scrollbar-thumb-blue-900">
-          {chatState.sessions.map((session) => {
-            return (
-              <div
-                key={session.id}
-                className={`cursor-pointer transition-all border-none shadow-none px-4 py-3 rounded-2xl flex items-center gap-3 ${session.id === chatState.activeSessionId ? "bg-gradient-to-r from-blue-500/90 to-indigo-500/90 text-white scale-[1.03] shadow-xl" : "bg-white/80 dark:bg-gray-800/80 hover:bg-blue-100/80 dark:hover:bg-blue-900/40 text-gray-900 dark:text-white"}`}
-                onClick={() => {
-                  setChatState(cs => ({ ...cs, activeSessionId: session.id }));
+        
+        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
+          {chatState.sessions.map((session) => (
+            <div
+              key={session.id}
+              className={`group cursor-pointer transition-all duration-200 px-4 py-4 rounded-xl flex items-center gap-3 ${
+                session.id === chatState.activeSessionId 
+                  ? "bg-gradient-to-r from-blue-500/90 to-indigo-500/90 text-white shadow-lg scale-[1.02]" 
+                  : "bg-white/60 dark:bg-gray-800/60 hover:bg-blue-50/80 dark:hover:bg-blue-900/30 text-gray-900 dark:text-white hover:shadow-md"
+              }`}
+              onClick={() => setChatState(cs => ({ ...cs, activeSessionId: session.id }))}
+            >
+              <HiOutlineChatAlt2 className="w-5 h-5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold truncate text-sm">{session.name}</p>
+                <p className="text-xs opacity-75">{session.messages.length} messages</p>
+              </div>
+              <Button
+                variant="light"
+                size="sm"
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700 p-1 min-w-0 h-6 w-6"
+                onClick={e => {
+                  e.stopPropagation();
+                  deleteSession(session.id);
                 }}
               >
-                <Avatar name={session.name} size="sm" className="shadow" />
-                <div className="flex-1 min-w-0">
-                  <span className="font-semibold truncate block text-sm">{session.name}</span>
-                  <span className="text-xs opacity-70">{session.messages.length} messages</span>
-                </div>
-                <Button
-                  variant="light"
-                  size="sm"
-                  className="ml-2 text-xs text-red-500 hover:text-red-700 px-2 py-1"
-                  onClick={e => {
-                    e.stopPropagation();
-                    deleteSession(session.id);
-                  }}
-                  aria-label="Delete chat"
-                >
-                  Delete
-                </Button>
-              </div>
-            );
-          })}
+                <HiOutlineTrash className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
         </div>
-        <div className="p-5 border-t border-white/30 dark:border-gray-800/60 bg-transparent">
+        
+        <div className="p-6 border-t border-white/20 dark:border-gray-800/50">
           <Button
             color="primary"
             fullWidth
-            className="rounded-full font-bold shadow-xl py-3 text-lg transition-transform active:scale-95"
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl py-3 shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+            startContent={<HiOutlinePlus className="w-5 h-5" />}
             onClick={() => {
               const newId = (chatState.sessions.length + 1).toString();
               setChatState(cs => ({
@@ -278,9 +293,9 @@ export default function ChatPage() {
                   ...cs.sessions,
                   {
                     id: newId,
-                    name: `Chat ${newId}`,
+                    name: `Database Query ${newId}`,
                     messages: [
-                      { role: "ai" as const, content: `Welcome to Chat ${newId}!`, timestamp: Date.now() },
+                      { role: "ai" as const, content: `Welcome to your new database session! I'm ready to help you explore your data. What would you like to know?`, timestamp: Date.now() },
                     ],
                   },
                 ],
@@ -288,115 +303,123 @@ export default function ChatPage() {
               }));
             }}
           >
-            + New Chat
+            New Chat Session
           </Button>
         </div>
       </aside>
-      {/* Mobile topbar and drawer */}
-      <div className="sm:hidden fixed top-0 left-0 w-full z-30 flex items-center justify-between px-4 py-3 bg-white/80 dark:bg-gray-900/80 border-b border-white/30 dark:border-gray-800/60 shadow-lg backdrop-blur-xl">
-        <Button variant="ghost" size="sm" className="p-2 min-w-0 h-8 w-8 flex items-center justify-center" onClick={() => setDrawerOpen(true)}>
-          <HiOutlineMenu className="w-6 h-6" />
-        </Button>
-        <span className="font-bold text-lg tracking-tight text-gray-900 dark:text-white">Chats</span>
-        <ThemeSwitch />
-      </div>
-      {/* Drawer overlay for mobile */}
+
+      {/* Mobile drawer */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-40 flex">
-          <div className="w-64 bg-white dark:bg-gray-900 h-full flex flex-col shadow-2xl animate-in fade-in">
-            <div className="flex items-center gap-3 px-6 py-5 border-b border-white/30 dark:border-gray-800/60 bg-transparent">
-              <Avatar name="Nexa" size="md" className="shadow-lg" />
-              <span className="font-extrabold text-2xl tracking-tight text-gray-900 dark:text-white">Chats</span>
-              <div className="ml-auto flex items-center gap-2">
-                <Button variant="ghost" size="sm" className="p-2 min-w-0 h-8 w-8 flex items-center justify-center" onClick={() => setDrawerOpen(false)}>
-                  ✕
-                </Button>
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setDrawerOpen(false)} />
+          <div className="absolute left-0 top-0 h-full w-80 bg-white dark:bg-gray-900 shadow-2xl animate-in slide-in-from-left duration-300">
+            <div className="flex items-center gap-4 px-6 py-6 border-b border-gray-200 dark:border-gray-800">
+              <Avatar name="SQL" size="md" className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white" />
+              <div className="flex-1">
+                <h1 className="font-bold text-xl">SQL Intelligence</h1>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Database Assistant</p>
               </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin scrollbar-thumb-blue-200 dark:scrollbar-thumb-blue-900">
-              {chatState.sessions.map((session) => {
-                return (
-                  <div
-                    key={session.id}
-                    className={`cursor-pointer transition-all border-none shadow-none px-4 py-3 rounded-2xl flex items-center gap-3 ${session.id === chatState.activeSessionId ? "bg-gradient-to-r from-blue-500/90 to-indigo-500/90 text-white scale-[1.03] shadow-xl" : "bg-white/80 dark:bg-gray-800/80 hover:bg-blue-100/80 dark:hover:bg-blue-900/40 text-gray-900 dark:text-white"}`}
-                    onClick={() => {
-                      setChatState(cs => ({ ...cs, activeSessionId: session.id }));
-                      setDrawerOpen(false);
-                    }}
-                  >
-                    <Avatar name={session.name} size="sm" className="shadow" />
-                    <div className="flex-1 min-w-0">
-                      <span className="font-semibold truncate block text-sm">{session.name}</span>
-                      <span className="text-xs opacity-70">{session.messages.length} messages</span>
-                    </div>
-                    <Button
-                      variant="light"
-                      size="sm"
-                      className="ml-2 text-xs text-red-500 hover:text-red-700 px-2 py-1"
-                      onClick={e => {
-                        e.stopPropagation();
-                        deleteSession(session.id);
-                      }}
-                      aria-label="Delete chat"
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="p-5 border-t border-white/30 dark:border-gray-800/60 bg-transparent">
-              <Button
-                color="primary"
-                fullWidth
-                className="rounded-full font-bold shadow-xl py-3 text-lg transition-transform active:scale-95"
-                onClick={() => {
-                  const newId = (chatState.sessions.length + 1).toString();
-                  setChatState(cs => ({
-                    sessions: [
-                      ...cs.sessions,
-                      {
-                        id: newId,
-                        name: `Chat ${newId}`,
-                        messages: [
-                          { role: "ai" as const, content: `Welcome to Chat ${newId}!`, timestamp: Date.now() },
-                        ],
-                      },
-                    ],
-                    activeSessionId: newId,
-                  }));
-                  setDrawerOpen(false);
-                }}
-              >
-                + New Chat
+              <Button variant="light" size="sm" onClick={() => setDrawerOpen(false)}>
+                ✕
               </Button>
             </div>
+            <div className="flex-1 overflow-y-auto px-4 py-6 space-y-3">
+              {chatState.sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className={`cursor-pointer px-4 py-4 rounded-xl flex items-center gap-3 ${
+                    session.id === chatState.activeSessionId 
+                      ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white" 
+                      : "bg-gray-100 dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                  }`}
+                  onClick={() => {
+                    setChatState(cs => ({ ...cs, activeSessionId: session.id }));
+                    setDrawerOpen(false);
+                  }}
+                >
+                  <HiOutlineChatAlt2 className="w-5 h-5" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm">{session.name}</p>
+                    <p className="text-xs opacity-75">{session.messages.length} messages</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="flex-1 bg-black/30" onClick={() => setDrawerOpen(false)} />
         </div>
       )}
+
+      {/* Mobile header */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-4 bg-white/90 dark:bg-gray-900/90 backdrop-blur-xl border-b border-white/20 dark:border-gray-800/50 shadow-lg">
+        <Button variant="light" size="sm" onClick={() => setDrawerOpen(true)}>
+          <HiOutlineMenu className="w-6 h-6" />
+        </Button>
+        <div className="flex items-center gap-2">
+          <HiOutlineDatabase className="w-5 h-5 text-blue-600" />
+          <span className="font-bold text-lg">SQL Chat</span>
+        </div>
+        <ThemeSwitch />
+      </div>
+
       {/* Main chat area */}
-      <div className="flex-1 min-w-0 flex flex-col h-full max-w-full overflow-x-hidden">
+      <div className="flex-1 flex flex-col h-full pt-16 lg:pt-0">
         {/* Chat header */}
-        <div className="flex items-center gap-2 sm:gap-4 px-2 sm:px-4 md:px-10 py-3 sm:py-4 md:py-6 border-b border-white/30 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/70 shadow-lg sticky top-0 z-10 backdrop-blur-xl w-full">
-          <Avatar name={activeSession.name} size="md" className="bg-gradient-to-br from-blue-400 to-indigo-600 text-white shadow-xl w-10 h-10 sm:w-14 sm:h-14" />
-          <div>
-            <span className="font-bold text-base sm:text-lg tracking-tight text-gray-900 dark:text-white">{activeSession.name}</span>
-            <div className="text-xs text-blue-600 dark:text-blue-300 font-medium mt-1">Online</div>
+        <div className="hidden lg:flex items-center gap-4 px-8 py-6 border-b border-white/20 dark:border-gray-800/50 bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl shadow-sm">
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full blur-sm opacity-30" />
+            <Avatar 
+              name={activeSession.name} 
+              size="lg" 
+              className="relative bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-lg" 
+            />
           </div>
-          <div className="ml-auto flex items-center gap-2">
-            <Tooltip content="More options">
-              <Button aria-label="More options" variant="ghost" size="sm" className="p-2 min-w-0 h-8 w-8 flex items-center justify-center">
-                <HiOutlineDotsHorizontal className="w-5 h-5" />
-              </Button>
-            </Tooltip>
+          <div className="flex-1">
+            <h2 className="font-bold text-xl text-gray-900 dark:text-white">{activeSession.name}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-sm text-green-600 dark:text-green-400 font-medium">Database Connected</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Chip size="sm" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+              <HiOutlineLightningBolt className="w-3 h-3 mr-1" />
+              AI Powered
+            </Chip>
+            <Button variant="light" size="sm">
+              <HiOutlineDotsHorizontal className="w-5 h-5" />
+            </Button>
           </div>
         </div>
+
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-1 sm:px-2 md:px-4 lg:px-8 py-2 sm:py-4 md:py-8 space-y-2 md:space-y-5 bg-transparent transition-colors scrollbar-thin scrollbar-thumb-blue-200 dark:scrollbar-thumb-blue-900 w-full max-w-full">
-          {chatState.sessions.length === 0 && (
-            <div className="text-center text-gray-400">Start the conversation...</div>
+        <div className="flex-1 overflow-y-auto px-4 lg:px-8 py-6 space-y-6">
+          {activeSession.messages.length === 1 && (
+            <div className="text-center py-12">
+              <div className="mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full mb-4">
+                  <HiOutlineSparkles className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Try these sample queries</h3>
+                <p className="text-gray-600 dark:text-gray-400">Click on any suggestion to get started</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl mx-auto">
+                {suggestedQueries.map((query, index) => (
+                  <Button
+                    key={index}
+                    variant="bordered"
+                    className="p-4 h-auto text-left justify-start border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-all duration-200"
+                    onClick={() => sendMessage(query)}
+                  >
+                    <div className="flex items-start gap-3">
+                      <HiOutlineDatabase className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">{query}</span>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
+
           {(() => {
             const groups = groupMessages(activeSession.messages);
             let prevMsg: Message | null = null;
@@ -405,58 +428,64 @@ export default function ChatPage() {
               const jsx = (
                 <Fragment key={group.startIdx}>
                   {separator && (
-                    <div className="flex justify-center my-2">
-                      <span className="px-2 sm:px-3 py-1 rounded-full bg-white/80 dark:bg-gray-800/80 text-xs text-gray-500 shadow animate-fade-in">
+                    <div className="flex justify-center my-6">
+                      <Chip size="sm" className="bg-white/80 dark:bg-gray-800/80 text-gray-600 dark:text-gray-400 shadow-sm">
                         {separator}
-                      </span>
+                      </Chip>
                     </div>
                   )}
-                  <div className={`flex ${group.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}>
-                    <div className="flex flex-col gap-1 max-w-full">
+                  <div className={`flex ${group.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className="flex flex-col gap-2 max-w-4xl w-full">
                       {group.messages.map((msg, idx) => (
-                        <div key={idx} className="flex items-end gap-1 sm:gap-2 max-w-full">
-                          {/* Only show avatar for first in group */}
+                        <div key={idx} className="flex items-start gap-3 group">
                           {group.role === "ai" && idx === 0 && (
-                            <Avatar name="AI" size="sm" className="mr-1 sm:mr-2 bg-gradient-to-br from-blue-400 to-indigo-600 text-white shadow" />
+                            <Avatar 
+                              name="AI" 
+                              size="sm" 
+                              className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-md flex-shrink-0 mt-1" 
+                            />
                           )}
-                          <div className={`relative max-w-[90vw] sm:max-w-xl w-fit`}>
+                          {group.role === "ai" && idx > 0 && <div className="w-8" />}
+                          
+                          <div className="flex-1 min-w-0">
                             <div
-                              className={`rounded-2xl sm:rounded-3xl px-3 sm:px-4 md:px-6 py-2 sm:py-3 md:py-4 text-sm sm:text-base font-normal break-words shadow-xl transition-all duration-200 ${
+                              className={`rounded-2xl px-4 py-3 shadow-sm ${
                                 group.role === "user"
-                                  ? "bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-br-lg"
-                                  : "bg-white/80 dark:bg-gray-800/80 text-gray-900 dark:text-white rounded-bl-lg"
+                                  ? "bg-gradient-to-r from-blue-500 to-indigo-500 text-white ml-auto max-w-2xl"
+                                  : "bg-white/80 dark:bg-gray-800/80 text-gray-900 dark:text-white border border-gray-200/50 dark:border-gray-700/50"
                               }`}
                             >
                               {group.role === "ai" ? (
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                <div className="prose prose-sm dark:prose-invert max-w-none">
+                                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                </div>
                               ) : (
-                                msg.content
+                                <p className="text-sm font-medium">{msg.content}</p>
                               )}
                             </div>
+                            
                             {/* Reactions */}
-                            <div className="flex gap-1 mt-1 ml-1">
+                            <div className="flex items-center gap-2 mt-2 ml-1">
                               {msg.reactions &&
                                 Object.entries(msg.reactions).map(([emoji, count]) => (
-                                  <span key={emoji} className="text-lg px-1 rounded-full bg-white/70 dark:bg-gray-900/70 shadow border border-gray-200 dark:border-gray-800 cursor-pointer hover:scale-110 transition-transform">
+                                  <Chip key={emoji} size="sm" className="bg-white/70 dark:bg-gray-800/70 text-xs">
                                     {emoji} {count}
-                                  </span>
+                                  </Chip>
                                 ))}
-                              <Tooltip content="Add reaction">
-                                <button
-                                  type="button"
-                                  className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 hover:text-blue-500 text-lg px-1"
-                                  onClick={() => setShowEmoji(showEmoji === group.startIdx + idx ? false : group.startIdx + idx)}
-                                  tabIndex={0}
-                                >
-                                  <HiOutlineEmojiHappy />
-                                </button>
-                              </Tooltip>
+                              <Button
+                                variant="light"
+                                size="sm"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 min-w-0 h-6 w-6"
+                                onClick={() => setShowEmoji(showEmoji === group.startIdx + idx ? false : group.startIdx + idx)}
+                              >
+                                <HiOutlineEmojiHappy className="w-4 h-4" />
+                              </Button>
                               {showEmoji === group.startIdx + idx && (
-                                <div className="absolute z-30 mt-2 left-0 bg-white dark:bg-gray-900 rounded-xl shadow-xl p-2 flex gap-1 animate-in fade-in">
+                                <div className="absolute z-30 mt-8 bg-white dark:bg-gray-900 rounded-xl shadow-xl p-2 flex gap-1 border border-gray-200 dark:border-gray-700">
                                   {emojiList.map((emoji) => (
                                     <button
                                       key={emoji}
-                                      className="text-xl hover:scale-125 transition-transform"
+                                      className="text-lg hover:scale-125 transition-transform p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
                                       onClick={() => {
                                         addReaction(group.startIdx + idx, emoji);
                                         setShowEmoji(false);
@@ -468,15 +497,20 @@ export default function ChatPage() {
                                 </div>
                               )}
                             </div>
-                            {/* Timestamp for last in group */}
+                            
                             {idx === group.messages.length - 1 && (
-                              <div className="text-xs text-gray-400 mt-1 ml-2 select-none">
+                              <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 ml-1">
                                 {formatTime(new Date(msg.timestamp))}
                               </div>
                             )}
                           </div>
+                          
                           {group.role === "user" && idx === group.messages.length - 1 && (
-                            <Avatar name="You" size="sm" className="ml-1 sm:ml-2 bg-gradient-to-br from-pink-400 to-pink-600 text-white shadow" />
+                            <Avatar 
+                              name="You" 
+                              size="sm" 
+                              className="bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-md flex-shrink-0 mt-1" 
+                            />
                           )}
                         </div>
                       ))}
@@ -488,39 +522,48 @@ export default function ChatPage() {
               return jsx;
             });
           })()}
-          {/* Typing indicator */}
+          
           {typing && (
-            <div className="flex items-end gap-2 justify-start animate-pulse">
-              <Avatar name="AI" size="sm" className="mr-2 bg-gradient-to-br from-blue-400 to-indigo-600 text-white shadow" />
-              <div className="rounded-3xl px-6 py-4 bg-white/80 dark:bg-gray-800/80 text-gray-900 dark:text-white shadow-xl flex gap-1 items-center">
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '100ms' }} />
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '200ms' }} />
+            <div className="flex items-start gap-3">
+              <Avatar name="AI" size="sm" className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-md" />
+              <div className="bg-white/80 dark:bg-gray-800/80 rounded-2xl px-4 py-3 border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+                <div className="flex items-center gap-1">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Analyzing your query...</span>
+                </div>
               </div>
             </div>
           )}
           <div ref={messagesEndRef} />
         </div>
+
         {/* Input area */}
         <form
-          className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 md:px-10 py-2 sm:py-4 md:py-6 bg-white/80 dark:bg-gray-900/80 shadow-2xl rounded-t-2xl sm:rounded-t-3xl sticky bottom-0 z-10 backdrop-blur-xl w-full"
+          className="flex items-center gap-3 px-4 lg:px-8 py-6 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl border-t border-white/20 dark:border-gray-800/50 shadow-lg"
           onSubmit={async e => {
             e.preventDefault();
             await sendMessage();
           }}
         >
-          <Button aria-label="Attach file" variant="ghost" size="lg" className="text-gray-500 hover:text-blue-500 p-2 min-w-0 h-10 w-10 flex items-center justify-center">
-            <HiOutlinePaperClip className="w-6 h-6" />
+          <Button variant="light" size="lg" className="text-gray-500 hover:text-blue-500 p-2 min-w-0 h-10 w-10">
+            <HiOutlinePaperClip className="w-5 h-5" />
           </Button>
-          <Button aria-label="Emoji picker" variant="ghost" size="lg" className="text-gray-500 hover:text-yellow-500 p-2 min-w-0 h-10 w-10 flex items-center justify-center" onClick={() => setShowEmoji(showEmoji === "input" ? false : "input")}> 
-            <HiOutlineEmojiHappy className="w-6 h-6" />
+          <Button 
+            variant="light" 
+            size="lg" 
+            className="text-gray-500 hover:text-yellow-500 p-2 min-w-0 h-10 w-10" 
+            onClick={() => setShowEmoji(showEmoji === "input" ? false : "input")}
+          > 
+            <HiOutlineEmojiHappy className="w-5 h-5" />
           </Button>
           {showEmoji === "input" && (
-            <div className="absolute bottom-20 left-10 sm:left-32 bg-white dark:bg-gray-900 rounded-xl shadow-xl p-2 flex gap-1 animate-in fade-in z-30">
+            <div className="absolute bottom-20 left-20 bg-white dark:bg-gray-900 rounded-xl shadow-xl p-3 flex gap-2 border border-gray-200 dark:border-gray-700 z-30">
               {emojiList.map((emoji) => (
                 <button
                   key={emoji}
-                  className="text-xl hover:scale-125 transition-transform"
+                  className="text-lg hover:scale-125 transition-transform p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
                   onClick={() => {
                     setInput(input + emoji);
                     setShowEmoji(false);
@@ -534,20 +577,29 @@ export default function ChatPage() {
           <Input
             value={input}
             onValueChange={setInput}
-            placeholder="Type your message..."
+            placeholder="Ask me anything about your database..."
             fullWidth
-            className="rounded-full px-3 sm:px-5 py-2 sm:py-3 text-sm sm:text-base shadow-lg bg-white/90 dark:bg-gray-800/90 border-none focus:ring-2 focus:ring-blue-400 transition-all"
-            aria-label="Type your message"
+            className="flex-1"
+            classNames={{
+              input: "text-sm lg:text-base",
+              inputWrapper: "bg-white/90 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow rounded-xl px-4 py-2"
+            }}
             disabled={typing}
           />
-          <Button aria-label="Voice input" variant="ghost" size="lg" className="text-gray-500 hover:text-blue-500 p-2 min-w-0 h-10 w-10 flex items-center justify-center">
-            <HiOutlineMicrophone className="w-6 h-6" />
+          <Button variant="light" size="lg" className="text-gray-500 hover:text-blue-500 p-2 min-w-0 h-10 w-10">
+            <HiOutlineMicrophone className="w-5 h-5" />
           </Button>
-          <Button color="primary" type="submit" className="rounded-full px-6 sm:px-8 py-2 sm:py-3 font-bold text-base sm:text-lg shadow-xl transition-transform active:scale-95" disabled={typing}>
-            Send
+          <Button 
+            color="primary" 
+            type="submit" 
+            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold px-6 py-2 rounded-xl shadow-md hover:shadow-lg transition-all duration-300 hover:scale-105" 
+            disabled={typing || !input.trim()}
+            startContent={!typing && <HiOutlineLightningBolt className="w-4 h-4" />}
+          >
+            {typing ? <Spinner size="sm" /> : "Send"}
           </Button>
         </form>
       </div>
     </div>
   );
-} 
+}
