@@ -59,3 +59,4 @@ public/*
 !public/favicon.ico
 !public/next.svg
 !public/vercel.svg
+.env
